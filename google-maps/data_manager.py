@@ -48,7 +48,7 @@ class DataManager:
             # Tambah kolom metadata
             df['keyword_pencarian'] = search_query
             
-            # Urutkan kolom (TANPA tanggal_scraping)
+            # Urutkan kolom
             column_order = [
                 'nama_bisnis',
                 'kategori',
@@ -57,7 +57,15 @@ class DataManager:
                 'no_telepon',
                 'website',
                 'alamat',
+                'status_prospek',
+                'skor_prospek',
+                'alasan',
             ]
+
+            # Tambahkan kolom klasifikasi jika belum ada (backward compatible)
+            for col in ['status_prospek', 'skor_prospek', 'alasan']:
+                if col not in df.columns:
+                    df[col] = ''
             
             df = df[column_order]
             
@@ -98,6 +106,14 @@ class DataManager:
         
         df = pd.DataFrame(data)
         
+        # Statistik klasifikasi prospek
+        if 'status_prospek' in df.columns:
+            utils.log_message("\nHasil Klasifikasi Prospek:")
+            status_counts = df['status_prospek'].value_counts()
+            for status, count in status_counts.items():
+                emoji = '🔥' if 'Hot' in status else ('🌡' if 'Warm' in status else '❄')
+                utils.log_message(f"  {emoji} {status}: {count} bisnis")
+
         # Statistik umum
         utils.log_message(f"Total bisnis terkumpul: {len(df)}")
         utils.log_message(f"Bisnis dengan telepon: {df['no_telepon'].notna().sum()}")

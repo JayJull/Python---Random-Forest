@@ -8,6 +8,7 @@ import sys
 from browser_manager import BrowserManager
 from scraper import GoogleMapsScraper
 from data_manager import DataManager
+from prospect_classifier import classify_all
 import config
 import utils
 
@@ -64,6 +65,17 @@ def main():
         utils.log_message("="*70 + "\n")
         
         collected_data = scraper.extract_business_data()
+
+        # 5b. Klasifikasi prospek berdasarkan feature importance Random Forest
+        utils.log_message("\n" + "="*70)
+        utils.log_message("KLASIFIKASI PROSPEK")
+        utils.log_message("  Bobot: Jumlah Ulasan 62.3% | Rating 33.2% | Website 4.5%")
+        utils.log_message("  Hot   : ulasan ≤ 30  + rating ≥ 4.9")
+        utils.log_message("  Warm  : skor 0.40–0.59 (berpotensi, perlu pendekatan)")
+        utils.log_message("  Cold  : ulasan banyak / rating rendah / tidak ada telepon")
+        utils.log_message("="*70 + "\n")
+
+        collected_data = classify_all(collected_data)
         
         # 6. Cek timeout
         if utils.is_timeout_reached(start_time):
