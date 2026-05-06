@@ -1,5 +1,7 @@
 from typing import Callable, Awaitable
+
 from playwright.async_api import Page
+
 from lib.scrap.configScrap import SCRAPING_CONFIG
 from lib.scrap.interfaceScrap import BusinessData, SendFn
 from lib.scrap.utilityScrap import random_delay
@@ -11,13 +13,14 @@ FEED_SELECTOR       = 'div[role="feed"]'
 
 
 async def collect_all_businesses(
-    page:         Page,
-    target:       float,
-    send:         SendFn,
-    on_extracted: Callable[[BusinessData], Awaitable[None]],
+    page:           Page,
+    target:         float,
+    send:           SendFn,
+    on_extracted:   Callable[[BusinessData], Awaitable[None]],
+    existing_names: set[str] | None = None,
 ) -> list[BusinessData]:
     results:        list[BusinessData] = []
-    seen_names:     set[str]           = set()
+    seen_names:     set[str]           = set(existing_names or [])
     failed_indices: set[int]           = set()
 
     current_index     = 0
@@ -74,6 +77,14 @@ async def collect_all_businesses(
 
             business = await extract_business_details(page)
 
+            if business is None:
+                send("info", f"Melewati item pada indeks {current_index} — tidak ada nomor telepon.")
+                consecutive_fails += 1
+                failed_indices.add(current_index)
+                await go_back_to_list(page)
+                current_index += 1
+                continue
+
             if not business.business_name:
                 send("info", f"Melewati item pada indeks {current_index} — nama bisnis tidak ditemukan.")
                 consecutive_fails += 1
@@ -82,14 +93,16 @@ async def collect_all_businesses(
                 current_index += 1
                 continue
 
-            if business.business_name in seen_names:
+            normalized_name = business.business_name.strip().lower()
+
+            if normalized_name in seen_names:
                 send("info", f"Melewati data duplikat: {business.business_name}")
                 failed_indices.add(current_index)
                 await go_back_to_list(page)
                 current_index += 1
                 continue
 
-            seen_names.add(business.business_name)
+            seen_names.add(normalized_name)
             results.append(business)
             consecutive_fails = 0
 

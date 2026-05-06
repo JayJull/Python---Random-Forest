@@ -1,4 +1,7 @@
+import re
+
 from playwright.async_api import Page
+
 from lib.scrap.interfaceScrap import BusinessData
 from lib.scrap.utilityScrap import (
     clean_text,
@@ -30,15 +33,9 @@ async def _try_get_attr(page: Page, selector: str, attr: str, timeout: int = 200
 
 
 def _assign_phone_or_website(data: BusinessData, raw_phone: str, raw_website: str) -> None:
-    candidates = {
-        "phone":   clean_text(raw_phone),
-        "website": clean_text(raw_website),
-    }
-
-    for field, value in candidates.items():
+    for field, value in {"phone": clean_text(raw_phone), "website": clean_text(raw_website)}.items():
         if not value:
             continue
-
         if looks_like_phone(value):
             data.phone = format_phone_number(value)
         elif looks_like_website(value):
@@ -49,13 +46,13 @@ def _assign_phone_or_website(data: BusinessData, raw_phone: str, raw_website: st
             data.website = value
 
 
-async def extract_business_details(page: Page) -> BusinessData:
+async def extract_business_details(page: Page) -> BusinessData | None:
     data = BusinessData()
 
     try:
         await page.wait_for_selector("h1.DUwDvf", timeout=5000)
     except Exception:
-        return data
+        return None
 
     try:
         current_url = page.url
@@ -64,19 +61,11 @@ async def extract_business_details(page: Page) -> BusinessData:
     except Exception:
         pass
 
-    name_text = await _try_get_text(
-        page,
-        "h1.DUwDvf",
-        'h1[class*="fontHeadline"]',
-    )
+    name_text = await _try_get_text(page, "h1.DUwDvf", 'h1[class*="fontHeadline"]')
     if name_text:
         data.business_name = clean_text(name_text)
 
-    category_text = await _try_get_text(
-        page,
-        'button[jsaction*="category"]',
-        'button[class*="DkEaL"]',
-    )
+    category_text = await _try_get_text(page, 'button[jsaction*="category"]', 'button[class*="DkEaL"]')
     if category_text:
         data.category = clean_text(category_text)
 
@@ -117,7 +106,6 @@ async def extract_business_details(page: Page) -> BusinessData:
             phone_button = page.locator('button[aria-label*="Telepon"]').first
             if await phone_button.count() > 0:
                 aria_label = await phone_button.get_attribute("aria-label", timeout=1000) or ""
-                import re
                 match = re.search(r"[\d\s+\-()]+", aria_label)
                 if match:
                     raw_phone = match.group(0)
@@ -125,11 +113,7 @@ async def extract_business_details(page: Page) -> BusinessData:
             pass
 
     try:
-        raw_website = await _try_get_attr(
-            page,
-            'a[data-item-id="authority"]',
-            "href",
-        )
+        raw_website = await _try_get_attr(page, 'a[data-item-id="authority"]', "href")
     except Exception:
         pass
 
@@ -140,5 +124,8 @@ async def extract_business_details(page: Page) -> BusinessData:
             pass
 
     _assign_phone_or_website(data, raw_phone, raw_website)
+
+    if not data.phone:
+        return None
 
     return data

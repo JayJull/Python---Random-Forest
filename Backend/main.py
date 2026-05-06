@@ -6,7 +6,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from database import get_db, close_connection
 from model.lead import ensure_indexes
 from routers.scrape import router as scrape_router
-from routers.lead import router as leads_router
 
 
 @asynccontextmanager
@@ -31,7 +30,6 @@ app.add_middleware(
 )
 
 app.include_router(scrape_router)
-app.include_router(leads_router)
 
 
 @app.get("/health")

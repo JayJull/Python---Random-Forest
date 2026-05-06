@@ -30,6 +30,15 @@ def list_jobs() -> list[dict]:
     return [{"job_id": jid, "done": task.done()} for jid, task in _active_jobs.items()]
 
 
+async def _load_existing_names(db, location: str, keyword: str) -> set[str]:
+    collection = get_lead_collection(db)
+    docs = await collection.find(
+        {"lokasi": location, "keyword": keyword},
+        {"nama": 1},
+    ).to_list(length=None)
+    return {doc["nama"].strip().lower() for doc in docs if doc.get("nama")}
+
+
 async def run_scrape_and_classify_job(
     job_id:   str,
     keyword:  str,
@@ -46,7 +55,11 @@ async def run_scrape_and_classify_job(
 
     try:
         target_label = "∞" if target == float("inf") else int(target)
-        send("info", f"Memulai scraping: '{keyword}' | target: {target_label}")
+        send("info", f"Memulai scraping: '{keyword}' di '{location}' | target: {target_label}")
+
+        existing_names = await _load_existing_names(db, location, keyword)
+        if existing_names:
+            send("info", f"Ditemukan {len(existing_names)} data yang sudah ada di database, akan dilewati.")
 
         user_agent     = pick_random(SCRAPING_CONFIG["USER_AGENTS"])
         browser_result = await launch_browser(user_agent)
@@ -58,7 +71,7 @@ async def run_scrape_and_classify_job(
         async def on_extracted(item: BusinessData) -> None:
             await _save_item(db, item, location, keyword, send, counter)
 
-        await collect_all_businesses(page, target, send, on_extracted)
+        await collect_all_businesses(page, target, send, on_extracted, existing_names)
 
         send("info", f"Scraping selesai — tersimpan: {counter.saved}, dilewati: {counter.skipped}")
         send("info", "Memulai klasifikasi machine learning...")
@@ -137,11 +150,11 @@ async def classify_unprocessed(db, send) -> None:
         for lead in leads
     ]
 
-    results    = await asyncio.to_thread(run_prediction, inputs)
-    prospek    = sum(1 for r in results if r.status == "Prospek")
-    not_prosek = len(results) - prospek
+    results     = await asyncio.to_thread(run_prediction, inputs)
+    prospek     = sum(1 for r in results if r.status == "Prospek")
+    not_prospek = len(results) - prospek
 
     for lead, result in zip(leads, results):
         await collection.update_one({"_id": lead["_id"]}, {"$set": {"status": result.status}})
 
-    send("success", f"Klasifikasi selesai — Prospek: {prospek}, Belum Prospek: {not_prosek}")
+    send("success", f"Klasifikasi selesai — Prospek: {prospek}, Belum Prospek: {not_prospek}")
