@@ -46,14 +46,15 @@ async def run_scrape_and_classify_job(
 
     try:
         target_label = "∞" if target == float("inf") else int(target)
-        send("info", f"Memulai scraping: '{keyword}' | target: {target_label}")
+        send("info", f"Memulai scraping: '{keyword}' di '{location}' | target: {target_label}")
 
         user_agent     = pick_random(SCRAPING_CONFIG["USER_AGENTS"])
         browser_result = await launch_browser(user_agent)
         page           = browser_result.page
 
-        await navigate_to_search(page, keyword)
-        send("info", "Halaman Google Maps berhasil dimuat.")
+        search_query = f"{keyword} {location}"
+        await navigate_to_search(page, search_query)
+        send("info", f"Halaman Google Maps berhasil dimuat — query: '{search_query}'")
 
         async def on_extracted(item: BusinessData) -> None:
             await _save_item(db, item, location, keyword, send, counter)
@@ -74,10 +75,7 @@ async def run_scrape_and_classify_job(
 
     finally:
         if browser_result:
-            try:
-                await browser_result.browser.close()
-            except Exception:
-                pass
+            await browser_result.browser.close()
 
         remove_job(job_id)
         queue.put_nowait(None)
@@ -139,9 +137,9 @@ async def classify_unprocessed(db, send) -> None:
 
     results    = await asyncio.to_thread(run_prediction, inputs)
     prospek    = sum(1 for r in results if r.status == "Prospek")
-    not_prosek = len(results) - prospek
+    not_prospek = len(results) - prospek
 
     for lead, result in zip(leads, results):
         await collection.update_one({"_id": lead["_id"]}, {"$set": {"status": result.status}})
 
-    send("success", f"Klasifikasi selesai — Prospek: {prospek}, Belum Prospek: {not_prosek}")
+    send("success", f"Klasifikasi selesai — Prospek: {prospek}, Belum Prospek: {not_prospek}")
