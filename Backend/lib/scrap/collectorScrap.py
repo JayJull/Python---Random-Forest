@@ -11,13 +11,14 @@ FEED_SELECTOR       = 'div[role="feed"]'
 
 
 async def collect_all_businesses(
-    page:         Page,
-    target:       float,
-    send:         SendFn,
-    on_extracted: Callable[[BusinessData], Awaitable[None]],
+    page:           Page,
+    target:         float,
+    send:           SendFn,
+    on_extracted:   Callable[[BusinessData], Awaitable[None]],
+    existing_names: set[str] = None,
 ) -> list[BusinessData]:
     results:        list[BusinessData] = []
-    seen_names:     set[str]           = set()
+    seen_names:     set[str]           = set(existing_names or [])
     failed_indices: set[int]           = set()
 
     current_index     = 0
