@@ -1,10 +1,12 @@
 from typing import Callable, Awaitable
+
 from playwright.async_api import Page
+
 from lib.scrap.configScrap import SCRAPING_CONFIG
-from lib.scrap.interfaceScrap import BusinessData, SendFn
-from lib.scrap.utilityScrap import random_delay
-from lib.scrap.navigationScrap import scroll_results_panel, go_back_to_list
 from lib.scrap.extractorScrap import extract_business_details
+from lib.scrap.interfaceScrap import BusinessData, SendFn
+from lib.scrap.navigationScrap import go_back_to_list, scroll_results_panel
+from lib.scrap.utilityScrap import random_delay
 
 PLACE_LINK_SELECTOR = 'a[href*="/maps/place/"]'
 FEED_SELECTOR       = 'div[role="feed"]'
@@ -20,9 +22,9 @@ async def collect_all_businesses(
     results:        list[BusinessData] = []
     seen_names:     set[str]           = set(existing_names or [])
     failed_indices: set[int]           = set()
-
-    current_index     = 0
-    consecutive_fails = 0
+    current_index                      = 0
+    consecutive_fails                  = 0
+    skipped_no_phone                   = 0
 
     while len(results) < target:
         try:
@@ -43,7 +45,6 @@ async def collect_all_businesses(
                     float("inf") if target == float("inf") else target,
                     send,
                 )
-
                 links       = await page.locator(PLACE_LINK_SELECTOR).all()
                 total_links = len(links)
 
@@ -55,12 +56,8 @@ async def collect_all_businesses(
                 current_index += 1
                 continue
 
-            send(
-                "info",
-                f"Memproses item ke-{current_index + 1} dari {total_links} — "
-                f"terkumpul: {len(results)}"
-                + ("" if target == float("inf") else f" dari {int(target)}"),
-            )
+            target_label = "∞" if target == float("inf") else int(target)
+            send("info", f"Memproses item ke-{current_index + 1} dari {total_links} — terkumpul: {len(results)} dari {target_label}")
 
             links = await page.locator(PLACE_LINK_SELECTOR).all()
             if current_index >= len(links):
@@ -76,15 +73,21 @@ async def collect_all_businesses(
             business = await extract_business_details(page)
 
             if not business.business_name:
-                send("info", f"Melewati item pada indeks {current_index} — nama bisnis tidak ditemukan.")
                 consecutive_fails += 1
                 failed_indices.add(current_index)
                 await go_back_to_list(page)
                 current_index += 1
                 continue
 
+            if not business.phone:
+                skipped_no_phone += 1
+                send("info", f"Dilewati (tidak ada nomor telepon): {business.business_name}")
+                failed_indices.add(current_index)
+                await go_back_to_list(page)
+                current_index += 1
+                continue
+
             if business.business_name in seen_names:
-                send("info", f"Melewati data duplikat: {business.business_name}")
                 failed_indices.add(current_index)
                 await go_back_to_list(page)
                 current_index += 1
@@ -94,11 +97,13 @@ async def collect_all_businesses(
             results.append(business)
             consecutive_fails = 0
 
-            target_display = "∞" if target == float("inf") else str(int(target))
+            result_label = "∞" if target == float("inf") else str(int(target))
+            website_info = f" | 🌐 {business.website}" if business.website else ""
             send(
                 "success",
-                f"[{len(results)}/{target_display}] {business.business_name} "
-                f"— rating: {business.rating} ({business.review_count} ulasan)",
+                f"[{len(results)}/{result_label}] {business.business_name}"
+                f" — ☎ {business.phone}{website_info}"
+                f" | ⭐ {business.rating} ({business.review_count} ulasan)",
             )
 
             await on_extracted(business)
@@ -120,11 +125,10 @@ async def collect_all_businesses(
             current_index += 1
 
             if consecutive_fails >= SCRAPING_CONFIG["MAX_CONSECUTIVE_FAILS"]:
-                send(
-                    "info",
-                    f"Proses dihentikan — {consecutive_fails} kegagalan berturutan. "
-                    "Kemungkinan data telah habis.",
-                )
+                send("info", f"Proses dihentikan — {consecutive_fails} kegagalan berturutan.")
                 break
+
+    if skipped_no_phone:
+        send("info", f"Total dilewati karena tidak ada nomor telepon: {skipped_no_phone}")
 
     return results
